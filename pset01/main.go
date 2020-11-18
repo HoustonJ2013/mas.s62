@@ -21,6 +21,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -29,7 +30,7 @@ import (
 func main() {
 
 	// Define your message
-	textString := "1"
+	textString := "Jingbo's first go code"
 	fmt.Printf("%s\n", textString)
 
 	// convert message into a block
@@ -110,7 +111,7 @@ func HexToPubkey(s string) (PublicKey, error) {
 	// first, make sure hex string is of correct length
 	if len(s) != expectedLength {
 		return p, fmt.Errorf(
-			"Pubkey string %d characters, expect %d", expectedLength)
+			"Pubkey string %d characters, expect %d", len(s), expectedLength)
 	}
 
 	// decode from hex to a byte slice
@@ -188,7 +189,7 @@ func HexToSignature(s string) (Signature, error) {
 	// first, make sure hex string is of correct length
 	if len(s) != expectedLength {
 		return sig, fmt.Errorf(
-			"Pubkey string %d characters, expect %d", expectedLength)
+			"Pubkey string %d characters, expect %d", len(s), expectedLength)
 	}
 
 	// decode from hex to a byte slice
@@ -223,6 +224,26 @@ func GenerateKey() (SecretKey, PublicKey, error) {
 	// Your code here
 	// ===
 
+	// generate random secretkey
+	for _, block_ := range sec.ZeroPre {
+		_, err := rand.Read(block_[:])
+		if err != nil {
+			return sec, pub, err
+		}
+	}
+
+	for _, block_ := range sec.OnePre {
+		_, err := rand.Read(block_[:])
+		if err != nil {
+			return sec, pub, err
+		}
+	}
+	// harsh secret keys and pass to public keys
+	for i, _ := range pub.ZeroHash {
+		pub.ZeroHash[i] = sec.ZeroPre[i].Hash()
+		pub.OneHash[i] = sec.OnePre[i].Hash()
+	}
+
 	// ===
 	return sec, pub, nil
 }
@@ -233,7 +254,19 @@ func Sign(msg Message, sec SecretKey) Signature {
 
 	// Your code here
 	// ===
-
+	msg_harsh := Block(msg).Hash()
+	si := 0
+	for _, bk := range msg_harsh {
+		for j := 0; j < 8; j++ {
+			mask := byte(1 << uint(j))
+			if (bk & mask) == 0 {
+				sig.Preimage[si] = sec.ZeroPre[si].Hash()
+			} else {
+				sig.Preimage[si] = sec.OnePre[si].Hash()
+			}
+			si += 1
+		}
+	}
 	// ===
 	return sig
 }
@@ -244,6 +277,26 @@ func Verify(msg Message, pub PublicKey, sig Signature) bool {
 
 	// Your code here
 	// ===
+	msg_harsh := Block(msg).Hash()
+
+	si := 0
+
+	for _, bk := range msg_harsh {
+		for j := 0; j < 8; j++ {
+			mask := byte(1 << uint(j))
+			if (bk & mask) == 0 {
+				if sig.Preimage[si] != pub.ZeroHash[si] {
+					return false
+				}
+			} else {
+				if sig.Preimage[si] != pub.OneHash[si] {
+
+					return false
+				}
+			}
+			si += 1
+		}
+	}
 
 	// ===
 
