@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"crypto/rand"
+	"fmt"
+)
 
 /*
 A note about the provided keys and signatures:
@@ -119,7 +122,7 @@ func Forge() (string, Signature, error) {
 	fmt.Printf("ok 3: %v\n", Verify(msgslice[2], pub, sig3))
 	fmt.Printf("ok 4: %v\n", Verify(msgslice[3], pub, sig4))
 
-	msgString := "my forge; Jingbo Liu; jingbo.liu2013@gmail.com;"
+	msgString_pre := "my forge; Jingbo Liu; jingbo.liu2013@gmail.com;"
 	var sig Signature
 
 	// your code here!
@@ -156,25 +159,84 @@ func Forge() (string, Signature, error) {
 			}
 		}
 	}
-	fmt.Printf("There are %v out of 512 signatures known", len(knownblocks))
+	fmt.Printf("There are %v out of 512 signatures known \n", len(knownblocks))
 
 	// Explore the unknown secret keys and messages to forge a signature
 
-	// mymsg := GetMessageFromString(msgString)
-	// for i, bk := range mymsg {
-	// 	for j := 7; j >= 0; j-- {
-	// 		mask := byte(1 << uint(j))
-	// 		if (bk & mask) == 0 {
+	msgString := msgString_pre
 
-	// 		}
+	for nounces_i := 0; nounces_i < 1e9; nounces_i++ {
+		nounces_s, _ := GenerateRandomString(8)
+		msgString = msgString_pre + nounces_s
+		// fmt.Printf(msgString, "\n")
+		mymsg := GetMessageFromString(msgString)
+		si = 0
+		for _, bk := range mymsg { // loop for all bits
+			for j := 7; j >= 0; j-- {
+				mask := byte(1 << uint(j))
+				if (bk & mask) == 0 {
+					// sanity check if the signature is consistent
+					_, prs := knownblocks[si]
+					if prs {
+						sig.Preimage[si] = knownblocks[si]
+					} else {
+						_, err := rand.Read(sig.Preimage[si][:])
+						// fmt.Printf("%v Generated random block %x \n", si, sig.Preimage[si].ToHex())
+						if err != nil {
+							return msgString, sig, err
+						}
+					}
+				} else {
+					_, prs := knownblocks[si+256]
+					if prs {
+						sig.Preimage[si] = knownblocks[si+256]
+					} else {
+						_, err := rand.Read(sig.Preimage[si][:])
+						// fmt.Printf("%v Generated random block %x \n", si, sig.Preimage[si].ToHex())
+						if err != nil {
+							return msgString, sig, err
+						}
+					}
+				}
+				si += 1
+				// fmt.Printf("Index %v \n", si)
+			}
+		}
+		if Verify(mymsg, pub, sig) {
+			return msgString, sig, nil
+		}
 
-	// 	}
-	// }
-
-	// ==
+	}
 
 	return msgString, sig, nil
 
+}
+
+func GenerateRandomBytes(n int) ([]byte, error) {
+	b := make([]byte, n)
+	_, err := rand.Read(b)
+	// Note that err == nil only if we read len(b) bytes.
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
+}
+
+// GenerateRandomString returns a securely generated random string.
+// It will return an error if the system's secure random
+// number generator fails to function correctly, in which
+// case the caller should not continue.
+func GenerateRandomString(n int) (string, error) {
+	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
+	bytes, err := GenerateRandomBytes(n)
+	if err != nil {
+		return "", err
+	}
+	for i, b := range bytes {
+		bytes[i] = letters[b%byte(len(letters))]
+	}
+	return string(bytes), nil
 }
 
 // hint:
