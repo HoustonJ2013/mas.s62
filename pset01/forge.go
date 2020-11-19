@@ -119,12 +119,58 @@ func Forge() (string, Signature, error) {
 	fmt.Printf("ok 3: %v\n", Verify(msgslice[2], pub, sig3))
 	fmt.Printf("ok 4: %v\n", Verify(msgslice[3], pub, sig4))
 
-	msgString := "my forged message"
+	msgString := "my forge; Jingbo Liu; jingbo.liu2013@gmail.com;"
 	var sig Signature
 
 	// your code here!
 	// ==
-	// Geordi La
+	// Get the secret keys from known signature
+	// Randomly guess the unknown secret keys and verify the message and public keys
+	// Add nounces into my message as a variance in the random guess
+
+	// get the known screate keys and save in a map; map key from 0 - 511,
+	knownblocks := make(map[int]Block)
+	si := 0
+	for mi, msg_ := range msgslice { // loop signatures
+		si = 0
+		for _, bk := range msg_ { // loop for all bits
+			for j := 7; j >= 0; j-- {
+				mask := byte(1 << uint(j))
+				if (bk & mask) == 0 {
+					// sanity check if the signature is consistent
+					_, prs := knownblocks[si]
+					if prs && knownblocks[si] != sigslice[mi].Preimage[si] {
+						fmt.Printf("The existing sinatures are not consistent")
+					} else {
+						knownblocks[si] = sigslice[mi].Preimage[si]
+					}
+				} else {
+					_, prs := knownblocks[si+256]
+					if prs && knownblocks[si+256] != sigslice[mi].Preimage[si] {
+						fmt.Printf("The existing sinatures are not consistent")
+					} else {
+						knownblocks[si+256] = sigslice[mi].Preimage[si]
+					}
+				}
+				si += 1
+			}
+		}
+	}
+	fmt.Printf("There are %v out of 512 signatures known", len(knownblocks))
+
+	// Explore the unknown secret keys and messages to forge a signature
+
+	// mymsg := GetMessageFromString(msgString)
+	// for i, bk := range mymsg {
+	// 	for j := 7; j >= 0; j-- {
+	// 		mask := byte(1 << uint(j))
+	// 		if (bk & mask) == 0 {
+
+	// 		}
+
+	// 	}
+	// }
+
 	// ==
 
 	return msgString, sig, nil

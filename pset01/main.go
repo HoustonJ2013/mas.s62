@@ -225,15 +225,17 @@ func GenerateKey() (SecretKey, PublicKey, error) {
 	// ===
 
 	// generate random secretkey
-	for _, block_ := range sec.ZeroPre {
+	for i, block_ := range sec.ZeroPre {
 		_, err := rand.Read(block_[:])
+		sec.ZeroPre[i] = block_
 		if err != nil {
 			return sec, pub, err
 		}
 	}
 
-	for _, block_ := range sec.OnePre {
+	for i, block_ := range sec.OnePre {
 		_, err := rand.Read(block_[:])
+		sec.OnePre[i] = block_
 		if err != nil {
 			return sec, pub, err
 		}
@@ -254,18 +256,21 @@ func Sign(msg Message, sec SecretKey) Signature {
 
 	// Your code here
 	// ===
-	msg_harsh := Block(msg).Hash()
 	si := 0
-	for _, bk := range msg_harsh {
-		for j := 0; j < 8; j++ {
+	for _, bk := range msg {
+		//	fmt.Printf("%8b \n", bk)
+		for j := 7; j >= 0; j-- {
 			mask := byte(1 << uint(j))
 			if (bk & mask) == 0 {
-				sig.Preimage[si] = sec.ZeroPre[si].Hash()
+				//			fmt.Printf("0")
+				sig.Preimage[si] = sec.ZeroPre[si]
 			} else {
-				sig.Preimage[si] = sec.OnePre[si].Hash()
+				//			fmt.Printf("1")
+				sig.Preimage[si] = sec.OnePre[si]
 			}
 			si += 1
 		}
+		//	fmt.Printf("\n")
 	}
 	// ===
 	return sig
@@ -277,19 +282,18 @@ func Verify(msg Message, pub PublicKey, sig Signature) bool {
 
 	// Your code here
 	// ===
-	msg_harsh := Block(msg).Hash()
 
 	si := 0
 
-	for _, bk := range msg_harsh {
-		for j := 0; j < 8; j++ {
+	for _, bk := range msg {
+		for j := 7; j >= 0; j-- {
 			mask := byte(1 << uint(j))
 			if (bk & mask) == 0 {
-				if sig.Preimage[si] != pub.ZeroHash[si] {
+				if sig.Preimage[si].Hash() != pub.ZeroHash[si] {
 					return false
 				}
 			} else {
-				if sig.Preimage[si] != pub.OneHash[si] {
+				if sig.Preimage[si].Hash() != pub.OneHash[si] {
 
 					return false
 				}
