@@ -122,7 +122,7 @@ func Forge() (string, Signature, error) {
 	fmt.Printf("ok 3: %v\n", Verify(msgslice[2], pub, sig3))
 	fmt.Printf("ok 4: %v\n", Verify(msgslice[3], pub, sig4))
 
-	msgString_pre := "my forge; Jingbo Liu; jingbo.liu2013@gmail.com;"
+	msgStringPre := "my forge; Jingbo Liu; jingbo.liu2013@gmail.com;"
 	var sig Signature
 
 	// your code here!
@@ -134,9 +134,9 @@ func Forge() (string, Signature, error) {
 	// get the known screate keys and save in a map; map key from 0 - 511,
 	knownblocks := make(map[int]Block)
 	si := 0
-	for mi, msg_ := range msgslice { // loop signatures
+	for mi, Imsg := range msgslice { // loop signatures
 		si = 0
-		for _, bk := range msg_ { // loop for all bits
+		for _, bk := range Imsg { // loop for all bits
 			for j := 7; j >= 0; j-- {
 				mask := byte(1 << uint(j))
 				if (bk & mask) == 0 {
@@ -155,7 +155,7 @@ func Forge() (string, Signature, error) {
 						knownblocks[si+256] = sigslice[mi].Preimage[si]
 					}
 				}
-				si += 1
+				si++
 			}
 		}
 	}
@@ -163,27 +163,91 @@ func Forge() (string, Signature, error) {
 
 	// Explore the unknown secret keys and messages to forge a signature
 
-	msgString := msgString_pre
+	msgString := msgStringPre
 
-	for nounces_i := 0; nounces_i < 1e9; nounces_i++ {
-		nounces_s, _ := GenerateRandomString(8)
-		msgString = msgString_pre + nounces_s
-		// fmt.Printf(msgString, "\n")
+	// single process implementations
+	// for nouncesI := 0; nouncesI < 10; nouncesI++ {
+	// 	nouncesS, _ := GenerateRandomString(8)
+	// 	msgString = msgStringPre + nouncesS
+	// 	// fmt.Printf(msgString + "\n")
+	// 	mymsg := GetMessageFromString(msgString)
+	// 	si = 0
+	// 	for _, bk := range mymsg { // loop for all bits
+	// 		for j := 7; j >= 0; j-- {
+	// 			mask := byte(1 << uint(j))
+	// 			if (bk & mask) == 0 {
+	// 				// Check if the signature is already known
+	// 				_, prs := knownblocks[si]
+	// 				if prs {
+	// 					sig.Preimage[si] = knownblocks[si]
+	// 				} else {
+	// 					_, err := rand.Read(sig.Preimage[si][:])
+	// 					// if si == 1 {
+	// 					// 	fmt.Printf("%v Generated random block %x \n", si, sig.Preimage[si].ToHex())
+	// 					// }
+	// 					if err != nil {
+	// 						return msgString, sig, err
+	// 					}
+	// 				}
+	// 			} else {
+	// 				_, prs := knownblocks[si+256]
+	// 				if prs {
+	// 					sig.Preimage[si] = knownblocks[si+256]
+	// 				} else {
+	// 					_, err := rand.Read(sig.Preimage[si][:])
+	// 					// if si == 1 {
+	// 					// 	fmt.Printf("%v Generated random block %x \n", si, sig.Preimage[si].ToHex())
+	// 					// }
+	// 					if err != nil {
+	// 						return msgString, sig, err
+	// 					}
+	// 				}
+	// 			}
+	// 			si++
+	// 			// fmt.Printf("Index %v \n", si)
+	// 		}
+	// 	}
+	// 	if Verify(mymsg, pub, sig) {
+	// 		return msgString, sig, nil
+	// 	}
+
+	// }
+	const numJobs = 10
+	sigString := make(chan string, numJobs)
+	forgedSig := make(chan Signature, numJobs)
+	fmt.Printf("lanching %v rountines to forge the signature", numJobs)
+	for w := 1; w <= numJobs; w++ {
+		go forgeworker(knownblocks, msgStringPre, pub, sigString, forgedSig)
+	}
+	// hold until the any gorountine return the channel values
+	msgString = <-sigString
+	sig = <-forgedSig
+	return msgString, sig, nil
+
+}
+
+func forgeworker(knownblocks map[int]Block, msgStringPre string,
+	pub PublicKey, sigString chan<- string, forgedSig chan<- Signature) {
+	var sig Signature
+	si := 0
+	for {
+		nouncesS, _ := GenerateRandomString(8)
+		msgString := msgStringPre
+		msgString = msgStringPre + nouncesS
 		mymsg := GetMessageFromString(msgString)
 		si = 0
 		for _, bk := range mymsg { // loop for all bits
 			for j := 7; j >= 0; j-- {
 				mask := byte(1 << uint(j))
 				if (bk & mask) == 0 {
-					// sanity check if the signature is consistent
+					// Check if the signature is already known
 					_, prs := knownblocks[si]
 					if prs {
 						sig.Preimage[si] = knownblocks[si]
 					} else {
 						_, err := rand.Read(sig.Preimage[si][:])
-						// fmt.Printf("%v Generated random block %x \n", si, sig.Preimage[si].ToHex())
 						if err != nil {
-							return msgString, sig, err
+							fmt.Printf("random block error .. ")
 						}
 					}
 				} else {
@@ -192,26 +256,24 @@ func Forge() (string, Signature, error) {
 						sig.Preimage[si] = knownblocks[si+256]
 					} else {
 						_, err := rand.Read(sig.Preimage[si][:])
-						// fmt.Printf("%v Generated random block %x \n", si, sig.Preimage[si].ToHex())
 						if err != nil {
-							return msgString, sig, err
+							fmt.Printf("random block error .. ")
 						}
 					}
 				}
-				si += 1
+				si++
 				// fmt.Printf("Index %v \n", si)
 			}
 		}
 		if Verify(mymsg, pub, sig) {
-			return msgString, sig, nil
+			// return the verified string and signature
+			sigString <- msgString
+			forgedSig <- sig
 		}
-
 	}
-
-	return msgString, sig, nil
-
 }
 
+// GenerateRandomBytes to help GenerateRandomString
 func GenerateRandomBytes(n int) ([]byte, error) {
 	b := make([]byte, n)
 	_, err := rand.Read(b)
