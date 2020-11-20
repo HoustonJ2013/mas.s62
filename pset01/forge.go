@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"fmt"
+	"runtime"
 )
 
 /*
@@ -122,7 +123,7 @@ func Forge() (string, Signature, error) {
 	fmt.Printf("ok 3: %v\n", Verify(msgslice[2], pub, sig3))
 	fmt.Printf("ok 4: %v\n", Verify(msgslice[3], pub, sig4))
 
-	msgStringPre := "my forge; Jingbo Liu; jingbo.liu2013@gmail.com;"
+	msgStringPre := "forge Jingbo Liu jingbo.liu2013@gmail.com"
 	var sig Signature
 
 	// your code here!
@@ -212,12 +213,15 @@ func Forge() (string, Signature, error) {
 	// 	}
 
 	// }
-	const numJobs = 10
+	const numJobs = 1000
 	sigString := make(chan string, numJobs)
 	forgedSig := make(chan Signature, numJobs)
-	fmt.Printf("lanching %v rountines to forge the signature", numJobs)
+	fmt.Printf("lanching %v rountines to forge the signature \n", numJobs)
+	fmt.Println("Version", runtime.Version())
+	fmt.Println("NumCPU", runtime.NumCPU())
+	fmt.Println("GOMAXPROCS", runtime.GOMAXPROCS(0))
 	for w := 1; w <= numJobs; w++ {
-		go forgeworker(knownblocks, msgStringPre, pub, sigString, forgedSig)
+		go forgeworker(w, knownblocks, msgStringPre, &pub, sigString, forgedSig)
 	}
 	// hold until the any gorountine return the channel values
 	msgString = <-sigString
@@ -226,52 +230,127 @@ func Forge() (string, Signature, error) {
 
 }
 
-func forgeworker(knownblocks map[int]Block, msgStringPre string,
-	pub PublicKey, sigString chan<- string, forgedSig chan<- Signature) {
+func forgeworker(workderid int, knownblocks map[int]Block, msgStringPre string,
+	pub *PublicKey, sigString chan<- string, forgedSig chan<- Signature) {
 	var sig Signature
 	si := 0
+	numTries := 0
 	for {
-		nouncesS, _ := GenerateRandomString(8)
+		nouncesS, _ := GenerateRandomString(15)
 		msgString := msgStringPre
-		msgString = msgStringPre + nouncesS
+		msgString = msgStringPre + nouncesS //+ string(numTries) + string(workderid*1000)
+		// fmt.Printf("Current string %s \n", msgString)
 		mymsg := GetMessageFromString(msgString)
 		si = 0
+		foundforge := true
 		for _, bk := range mymsg { // loop for all bits
 			for j := 7; j >= 0; j-- {
 				mask := byte(1 << uint(j))
 				if (bk & mask) == 0 {
 					// Check if the signature is already known
 					_, prs := knownblocks[si]
-					if prs {
-						sig.Preimage[si] = knownblocks[si]
+					if !prs {
+						foundforge = false
 					} else {
-						_, err := rand.Read(sig.Preimage[si][:])
-						if err != nil {
-							fmt.Printf("random block error .. ")
-						}
+						sig.Preimage[si] = knownblocks[si]
 					}
 				} else {
 					_, prs := knownblocks[si+256]
-					if prs {
-						sig.Preimage[si] = knownblocks[si+256]
+					if !prs {
+						foundforge = false
 					} else {
-						_, err := rand.Read(sig.Preimage[si][:])
-						if err != nil {
-							fmt.Printf("random block error .. ")
-						}
+						sig.Preimage[si] = knownblocks[si]
 					}
+				}
+				if foundforge == false {
+					break
 				}
 				si++
 				// fmt.Printf("Index %v \n", si)
 			}
+			if foundforge == false {
+				break
+			}
+			if si > 220 {
+				fmt.Printf("forged message reached %v at workder %v with string %s \n", si, workderid, msgString)
+			}
 		}
-		if Verify(mymsg, pub, sig) {
-			// return the verified string and signature
-			sigString <- msgString
-			forgedSig <- sig
+
+		if foundforge == true {
+			if Verify(mymsg, *pub, sig) {
+				// return the verified string and signature
+				fmt.Printf("Find a verified signature and message %s", msgString)
+				sigString <- msgString
+				forgedSig <- sig
+			} else {
+				sigString <- msgString
+				forgedSig <- sig
+				fmt.Printf("found signature string %s, but it doesn't verify \n", msgString)
+				fmt.Printf("Current implemtation has bug..... \n")
+			}
+
+		}
+
+		numTries++
+		if numTries%5000000 == 0 {
+			fmt.Printf("Worker %v has tried %v times \n", workderid, numTries)
 		}
 	}
 }
+
+// old inefficient way to forging
+// func forgeworker(workderid int, knownblocks map[int]Block, msgStringPre string,
+// 	pub *PublicKey, sigString chan<- string, forgedSig chan<- Signature) {
+// 	var sig Signature
+// 	si := 0
+// 	numTries := 0
+// 	for {
+// 		nouncesS, _ := GenerateRandomString(8)
+// 		msgString := msgStringPre
+// 		msgString = msgStringPre + nouncesS
+// 		mymsg := GetMessageFromString(msgString)
+// 		si = 0
+// 		for _, bk := range mymsg { // loop for all bits
+// 			for j := 7; j >= 0; j-- {
+// 				mask := byte(1 << uint(j))
+// 				if (bk & mask) == 0 {
+// 					// Check if the signature is already known
+// 					_, prs := knownblocks[si]
+// 					if prs {
+// 						sig.Preimage[si] = knownblocks[si]
+// 					} else {
+// 						_, err := rand.Read(sig.Preimage[si][:])
+// 						if err != nil {
+// 							fmt.Printf("random block error .. ")
+// 						}
+// 					}
+// 				} else {
+// 					_, prs := knownblocks[si+256]
+// 					if prs {
+// 						sig.Preimage[si] = knownblocks[si+256]
+// 					} else {
+// 						_, err := rand.Read(sig.Preimage[si][:])
+// 						if err != nil {
+// 							fmt.Printf("random block error .. ")
+// 						}
+// 					}
+// 				}
+// 				si++
+// 				// fmt.Printf("Index %v \n", si)
+// 			}
+// 		}
+// 		if Verify(mymsg, *pub, sig) {
+// 			// return the verified string and signature
+// 			fmt.Printf("Find a verified signature and message %v", mymsg)
+// 			sigString <- msgString
+// 			forgedSig <- sig
+// 		}
+// 		numTries++
+// 		if numTries%10000000 == 0 {
+// 			fmt.Printf("Worker %v has tried %v times \n", workderid, numTries)
+// 		}
+// 	}
+// }
 
 // GenerateRandomBytes to help GenerateRandomString
 func GenerateRandomBytes(n int) ([]byte, error) {
